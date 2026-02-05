@@ -11,7 +11,7 @@ st.set_page_config(page_title="유럽직할지방회 임원 시스템", layout="
 
 @st.cache_resource
 def get_connection():
-    key_dict = json.loads(st.secrets["service_account_json"])
+   key_dict = json.loads(st.secrets["service_account_json"], strict=False)
     scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     creds = Credentials.from_service_account_info(key_dict, scopes=scopes)
     client = gspread.authorize(creds)
