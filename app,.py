@@ -13,11 +13,12 @@ import time
 # ------------------------------------------------------------------
 st.set_page_config(page_title="유럽직할지방회", layout="wide", initial_sidebar_state="collapsed")
 
-# 모바일 친화적 스타일 (여백 최소화)
+# 모바일 친화적 스타일 (여백 최소화 & 폰트 조정)
 st.markdown("""
     <style>
-        .block-container {padding-top: 1rem; padding-bottom: 0rem;}
+        .block-container {padding-top: 1rem; padding-bottom: 2rem;}
         [data-testid="stMetricValue"] {font-size: 1.5rem;}
+        .stButton button {width: 100%;}
     </style>
 """, unsafe_allow_html=True)
 
@@ -117,18 +118,11 @@ else:
             st.session_state.logged_in = False
             st.rerun()
         
-        # [NEW] 앱 설치 가이드 추가
         st.divider()
-        with st.expander("📲 앱으로 설치하기"):
-            st.info("이 페이지를 앱처럼 사용하세요!")
+        with st.expander("📲 앱 설치 방법"):
             st.markdown("""
-            **🍎 아이폰 (Safari)**
-            1. 하단 **[공유]** 버튼 클릭
-            2. **'홈 화면에 추가'** 선택
-            
-            **🤖 갤럭시 (Chrome)**
-            1. 우측 상단 **[점 3개]** 클릭
-            2. **'앱 설치'** 또는 **'홈 화면에 추가'**
+            **아이폰**: [공유] → [홈 화면에 추가]
+            **갤럭시**: [점 3개] → [홈 화면에 추가]
             """)
 
     # [1] 대시보드
@@ -138,9 +132,9 @@ else:
             sh = get_google_sheet().open("지방회_시스템")
             df_doc = pd.DataFrame(sh.worksheet("documents").get_all_records())
             df_fin = pd.DataFrame(sh.worksheet("finance").get_all_records())
-
-            p_doc = len(df_doc[df_doc['status'] == '대기']) if not df_doc.empty else 0
             
+            # --- 1. 통계 (결재/잔액) ---
+            p_doc = len(df_doc[df_doc['status'] == '대기']) if not df_doc.empty else 0
             balance = 0
             p_fin = 0
             if not df_fin.empty:
@@ -151,53 +145,81 @@ else:
                 p_fin = len(df_fin[df_fin['status'] == '대기'])
 
             c1, c2, c3 = st.columns(3)
-            c1.metric("결재 대기", f"{p_doc + p_fin}건", delta="확인 필요" if (p_doc+p_fin)>0 else "완료", delta_color="inverse")
+            c1.metric("결재 대기", f"{p_doc + p_fin}건", delta="처리 필요" if (p_doc+p_fin)>0 else "완료", delta_color="inverse")
             c2.metric("재정 잔액", f"€ {int(balance):,}")
             c3.write(f"접속자: {user['name']}")
             
             st.divider()
 
+            # --- 2. 회장님 결재 섹션 (One-Touch) ---
             if user['role'] == 'admin':
-                st.write("### ⚡ 빠른 결재 (One-Touch)")
-                if (p_doc + p_fin) == 0:
-                    st.info("🎉 현재 대기 중인 결재 건이 없습니다.")
-                else:
+                if (p_doc + p_fin) > 0:
+                    st.write("### ⚡ 빠른 결재 필요")
+                    
                     if p_fin > 0:
-                        st.markdown("#### 💰 재정 결재")
                         pending_fin = df_fin[df_fin['status'] == '대기']
                         for idx, row in pending_fin.iterrows():
                             with st.container(border=True):
                                 col_a, col_b = st.columns([3, 1])
-                                col_a.markdown(f"**{row['category']}** (€ {row['amount']:,})  \n📄 {row['description']}")
-                                if row['receipt_url']: col_a.link_button("영수증 보기", row['receipt_url'])
-                                if col_b.button("승인", key=f"dash_fin_{idx}", type="primary"):
-                                    approve_finance(idx); st.toast("승인 완료!"); time.sleep(1); st.rerun()
+                                col_a.markdown(f"💰 **{row['category']}** (€ {row['amount']:,}) | {row['description']}")
+                                if row['receipt_url']: col_a.link_button("영수증", row['receipt_url'])
+                                if col_b.button("승인", key=f"d_f_{idx}", type="primary"):
+                                    approve_finance(idx); st.toast("승인 완료!"); time.sleep(0.5); st.rerun()
 
                     if p_doc > 0:
-                        st.markdown("#### 📄 문서 결재")
                         pending_doc = df_doc[df_doc['status'] == '대기']
                         for idx, row in pending_doc.iterrows():
                             with st.container(border=True):
                                 col_a, col_b = st.columns([3, 1])
-                                col_a.markdown(f"**{row['title']}** (작성: {row['writer']})  \n🗓️ {row['date']}")
-                                if row['file_url']: col_a.link_button("문서 보기", row['file_url'])
-                                if col_b.button("승인", key=f"dash_doc_{idx}", type="primary"):
-                                    approve_document(idx); st.toast("승인 완료!"); time.sleep(1); st.rerun()
+                                col_a.markdown(f"📄 **{row['title']}** (작성: {row['writer']})")
+                                if row['file_url']: col_a.link_button("문서", row['file_url'])
+                                if col_b.button("승인", key=f"d_d_{idx}", type="primary"):
+                                    approve_document(idx); st.toast("승인 완료!"); time.sleep(0.5); st.rerun()
+                    st.divider()
+
+            # --- 3. 다가오는 일정 (복구됨) ---
+            st.write("### 📅 다가오는 일정 (Upcoming)")
+            s_data = sh.worksheet("schedule").get_all_records()
+            if s_data:
+                df_s = pd.DataFrame(s_data)
+                if 'start_date' in df_s.columns and 'end_date' in df_s.columns:
+                    df_s['start_date'] = pd.to_datetime(df_s['start_date'])
+                    # 오늘 이후 종료되는 일정만 필터링 (이미 끝난 건 안 보임)
+                    upcoming = df_s[df_s['end_date'] >= datetime.today().strftime('%Y-%m-%d')].sort_values('start_date').head(3)
+                    
+                    if not upcoming.empty:
+                        for _, row in upcoming.iterrows():
+                            s_str = row['start_date'].strftime('%Y-%m-%d')
+                            e_str = row['end_date']
+                            date_msg = s_str if s_str == e_str else f"{s_str} ~ {e_str}"
+                            
+                            # 카드 형태로 예쁘게 표시
+                            st.info(f"**{row['title']}**\n\n🗓️ {date_msg} | 📍 {row['location']}")
+                    else:
+                        st.caption("예정된 일정이 없습니다.")
+                else: st.error("일정 데이터 형식이 맞지 않습니다.")
             else:
-                 st.info("왼쪽 메뉴를 선택해 업무를 시작하세요.")
+                st.caption("등록된 일정이 없습니다.")
 
         except Exception as e: st.error(f"로딩 오류: {e}")
 
-    # [2] 일정
+    # [2] 일정 (등록 및 수정)
     elif menu == "일정":
         st.subheader("Calendar")
         try:
             sh = get_google_sheet().open("지방회_시스템")
             s_data = sh.worksheet("schedule").get_all_records()
-            df_s = pd.DataFrame(s_data) if s_data else pd.DataFrame()
+            df_s = pd.DataFrame(s_data) if s_data else pd.DataFrame(columns=['start_date','end_date','title','location','description'])
 
             if user['role'] in ['secretary', 'admin']:
-                with st.expander("➕ 일정 등록"):
+                with st.expander("➕ 일정 등록/수정"):
+                    if not df_s.empty:
+                         edit_mode = st.toggle("수정 모드", value=False)
+                         if edit_mode:
+                             edited = st.data_editor(df_s, num_rows="dynamic", use_container_width=True)
+                             if st.button("저장"): save_data("schedule", edited); st.rerun()
+                    
+                    st.write("새 일정 등록")
                     with st.form("sch"):
                         c1, c2 = st.columns(2)
                         sd = c1.date_input("시작")
@@ -205,7 +227,7 @@ else:
                         t = st.text_input("제목")
                         l = st.text_input("장소")
                         d = st.text_area("내용")
-                        if st.form_submit_button("저장"):
+                        if st.form_submit_button("등록"):
                             log_schedule(sd, ed, t, l, d); st.rerun()
 
             if not df_s.empty and 'start_date' in df_s.columns:
@@ -250,7 +272,7 @@ else:
                         c1.write(f"**{r['task']}**")
                         if c2.button("Done", key=f"d{i}"): update_task_status(i,"완료"); st.rerun()
                 with tabs[2]:
-                    st.dataframe(df_t[df_t['status']=='완료'])
+                    st.dataframe(df_t[df_t['status']=='완료'], use_container_width=True)
         except: st.error("업무 오류")
 
     # [4] 문서
@@ -283,7 +305,14 @@ else:
             df = pd.DataFrame(sh.worksheet("finance").get_all_records())
 
             if user['role'] in ['treasurer', 'admin']:
-                with st.expander("📝 장부 입력"):
+                with st.expander("📝 장부 입력/수정"):
+                    if not df.empty:
+                        edit_mode = st.toggle("수정 모드", value=False)
+                        if edit_mode:
+                            edited = st.data_editor(df, num_rows="dynamic", use_container_width=True)
+                            if st.button("저장"): save_data("finance", edited); st.rerun()
+                    
+                    st.write("새 내역 입력")
                     with st.form("fin"):
                         c1, c2 = st.columns(2)
                         ft = c1.radio("구분", ["수입", "지출"], horizontal=True)
