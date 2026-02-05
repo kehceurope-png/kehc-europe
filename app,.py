@@ -23,7 +23,6 @@ def get_google_sheet():
     else:
         key_dict = json.loads(st.secrets["service_account_json"], strict=False)
 
-    # [수정된 부분] 여기에 'drive' 권한을 다시 넣었습니다!
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
@@ -122,9 +121,67 @@ else:
 
     st.title("🇪🇺 유럽직할지방회 행정 시스템")
 
+    # [1] 대시보드 (업그레이드 됨)
     if menu == "대시보드":
-        st.info("👋 환영합니다. 왼쪽 메뉴에서 업무를 선택해주세요.")
+        st.subheader("📊 한눈에 보는 현황")
+        
+        try:
+            client = get_google_sheet()
+            sh = client.open("지방회_시스템")
+            
+            # 데이터 가져오기 (문서 & 재정)
+            doc_data = sh.worksheet("documents").get_all_records()
+            fin_data = sh.worksheet("finance").get_all_records()
+            
+            df_doc = pd.DataFrame(doc_data)
+            df_fin = pd.DataFrame(fin_data)
+            
+            # 1. 문서 대기 건수 계산
+            pending_docs = 0
+            if not df_doc.empty:
+                pending_docs = len(df_doc[df_doc['status'] == '대기'])
+                
+            # 2. 재정 대기 건수 및 잔액 계산
+            pending_fin = 0
+            balance = 0
+            if not df_fin.empty:
+                # 금액 콤마 제거 및 숫자 변환
+                df_fin['amount'] = pd.to_numeric(df_fin['amount'].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+                pending_fin = len(df_fin[df_fin['status'] == '대기'])
+                
+                income = df_fin[df_fin['type'] == '수입']['amount'].sum()
+                expense = df_fin[df_fin['type'] == '지출']['amount'].sum()
+                balance = income - expense
 
+            # 3. 화면에 카드 형태로 보여주기
+            col1, col2, col3 = st.columns(3)
+            
+            col1.metric("📄 결재 대기 문서", f"{pending_docs}건", 
+                        delta="확인 필요" if pending_docs > 0 else "완료",
+                        delta_color="inverse" if pending_docs > 0 else "normal")
+            
+            col2.metric("💰 결재 대기 재정", f"{pending_fin}건",
+                        delta="확인 필요" if pending_fin > 0 else "완료",
+                        delta_color="inverse" if pending_fin > 0 else "normal")
+            
+            col3.metric("💶 현재 재정 잔액", f"€ {int(balance):,}")
+            
+            st.divider()
+            
+            # 4. 종합 알림 메시지
+            total_pending = pending_docs + pending_fin
+            
+            if total_pending > 0:
+                st.warning(f"🔔 현재 총 **{total_pending}건**의 승인 대기 항목이 있습니다. 왼쪽 메뉴에서 확인해주세요.")
+            else:
+                st.success("✅ 모든 업무가 처리되었습니다. 현재 대기 중인 항목이 없습니다.")
+                st.balloons() # 업무가 없을 때 풍선 효과 (재미 요소)
+
+        except Exception as e:
+            st.error(f"데이터를 불러오는 중입니다 (또는 오류): {e}")
+
+
+    # [2] 문서관리
     elif menu == "문서관리":
         st.subheader("📄 문서 제출 및 결재")
         try:
@@ -169,9 +226,12 @@ else:
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"업로드 오류: {e}")
+                        else:
+                            st.warning("파일과 제목을 입력하세요.")
         except Exception as e:
             st.error(f"오류: {e}")
 
+    # [3] 회계관리
     elif menu == "회계관리":
         st.subheader("💰 재정 수입/지출 관리")
         try:
