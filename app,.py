@@ -13,7 +13,7 @@ import time
 # ------------------------------------------------------------------
 st.set_page_config(page_title="유럽직할지방회", layout="wide", initial_sidebar_state="collapsed")
 
-# 모바일 친화적 스타일 (여백 최소화 & 폰트 조정)
+# 모바일 친화적 스타일
 st.markdown("""
     <style>
         .block-container {padding-top: 1rem; padding-bottom: 2rem;}
@@ -132,6 +132,7 @@ else:
             sh = get_google_sheet().open("지방회_시스템")
             df_doc = pd.DataFrame(sh.worksheet("documents").get_all_records())
             df_fin = pd.DataFrame(sh.worksheet("finance").get_all_records())
+            df_task = pd.DataFrame(sh.worksheet("tasks").get_all_records())
             
             # --- 1. 통계 (결재/잔액) ---
             p_doc = len(df_doc[df_doc['status'] == '대기']) if not df_doc.empty else 0
@@ -177,14 +178,33 @@ else:
                                     approve_document(idx); st.toast("승인 완료!"); time.sleep(0.5); st.rerun()
                     st.divider()
 
-            # --- 3. 다가오는 일정 (복구됨) ---
+            # --- 3. [NEW] 진행 중인 업무 현황 ---
+            st.write("### 📌 진행 중인 업무 (Active Tasks)")
+            if not df_task.empty:
+                # '대기' 또는 '진행중'인 업무만 필터링
+                active_tasks = df_task[df_task['status'].isin(['대기', '진행중'])]
+                
+                if not active_tasks.empty:
+                    for _, row in active_tasks.iterrows():
+                        # 대기중은 빨강, 진행중은 노랑/파랑으로 구분
+                        status_emoji = "🔴" if row['status'] == '대기' else "🟡"
+                        with st.container(border=True):
+                            st.write(f"{status_emoji} **{row['task']}**")
+                            st.caption(f"담당: {row['assignee']} | 마감: {row['due_date']} | {row['note']}")
+                else:
+                    st.info("현재 대기 중이거나 진행 중인 업무가 없습니다.")
+            else:
+                st.info("등록된 업무가 없습니다.")
+
+            st.divider()
+
+            # --- 4. 다가오는 일정 ---
             st.write("### 📅 다가오는 일정 (Upcoming)")
             s_data = sh.worksheet("schedule").get_all_records()
             if s_data:
                 df_s = pd.DataFrame(s_data)
                 if 'start_date' in df_s.columns and 'end_date' in df_s.columns:
                     df_s['start_date'] = pd.to_datetime(df_s['start_date'])
-                    # 오늘 이후 종료되는 일정만 필터링 (이미 끝난 건 안 보임)
                     upcoming = df_s[df_s['end_date'] >= datetime.today().strftime('%Y-%m-%d')].sort_values('start_date').head(3)
                     
                     if not upcoming.empty:
@@ -192,14 +212,10 @@ else:
                             s_str = row['start_date'].strftime('%Y-%m-%d')
                             e_str = row['end_date']
                             date_msg = s_str if s_str == e_str else f"{s_str} ~ {e_str}"
-                            
-                            # 카드 형태로 예쁘게 표시
                             st.info(f"**{row['title']}**\n\n🗓️ {date_msg} | 📍 {row['location']}")
-                    else:
-                        st.caption("예정된 일정이 없습니다.")
+                    else: st.caption("예정된 일정이 없습니다.")
                 else: st.error("일정 데이터 형식이 맞지 않습니다.")
-            else:
-                st.caption("등록된 일정이 없습니다.")
+            else: st.caption("등록된 일정이 없습니다.")
 
         except Exception as e: st.error(f"로딩 오류: {e}")
 
