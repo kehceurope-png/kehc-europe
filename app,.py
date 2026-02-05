@@ -97,4 +97,4 @@ else:
     st.write("---")
     st.write("👈 왼쪽 사이드바에서 메뉴를 선택하게 될 예정입니다.")
 
-drive_folder_id = "13YP70VCbGpgw89HEzN2Hnf7GFURDLlR-"
+
