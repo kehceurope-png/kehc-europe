@@ -1,47 +1,94 @@
-import json # 맨 위에 이 줄이 없으면 추가해주세요!
 import streamlit as st
 import gspread
+import json
 from google.oauth2.service_account import Credentials
+import time
 
-# 페이지 설정
+# ------------------------------------------------------------------
+# 1. 설정 및 연결 (기존과 동일)
+# ------------------------------------------------------------------
 st.set_page_config(page_title="유럽직할지방회 임원 시스템", layout="wide")
 
-# 1. 구글 시트 연결하기 (비밀 열쇠 사용)
-# 캐싱( @st.cache_resource )을 사용해서 매번 로그인하지 않도록 함
 @st.cache_resource
 def get_connection():
-    # Streamlit Secrets에서 열쇠 꺼내기 (문자열을 JSON으로 변환)
     key_dict = json.loads(st.secrets["service_account_json"])
-    
-    # 구글에 접속할 권한 설정
     scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     creds = Credentials.from_service_account_info(key_dict, scopes=scopes)
     client = gspread.authorize(creds)
-    
     return client
 
-# 2. 화면 구성
-st.title("🇪🇺 유럽직할지방회 임원 행정 시스템")
+# ------------------------------------------------------------------
+# 2. 로그인 관련 함수
+# ------------------------------------------------------------------
+def check_login(username, password):
+    """구글 시트에서 아이디/비번 확인"""
+    try:
+        client = get_connection()
+        sh = client.open("2026_지방회_시스템")
+        worksheet = sh.worksheet("users")
+        records = worksheet.get_all_records()
+        
+        for user in records:
+            # 문자열로 변환해서 비교 (숫자로 입력될 경우 대비)
+            if str(user['username']) == str(username) and str(user['password']) == str(password):
+                return user # 로그인 성공 시 사용자 정보 반환
+        return None # 실패
+    except Exception as e:
+        st.error(f"로그인 확인 중 오류 발생: {e}")
+        return None
 
-try:
-    # 연결 시도
-    client = get_connection()
-    
-    # 시트 열기 (파일 이름이 정확해야 합니다!)
-    # 목사님이 만드신 구글 시트 제목: "2026_지방회_시스템"
-    sh = client.open("2026_지방회_시스템")
-    
-    st.success("✅ 구글 스프레드시트 연결 성공!")
-    
-    # 'users' 탭의 내용 가져와서 보여주기 (테스트)
-    worksheet = sh.worksheet("users")
-    data = worksheet.get_all_records()
-    
-    st.subheader("📋 현재 등록된 사용자 (DB 테스트)")
-    if data:
-        st.dataframe(data)
-    else:
-        st.info("아직 등록된 사용자가 없습니다. 구글 시트 'users' 탭에 데이터를 입력해보세요.")
+# 세션 상태 초기화 (로그인 상태 기억하기 위함)
+if 'logged_in' not in st.session_state:
+    st.session_state.logged_in = False
+if 'user_info' not in st.session_state:
+    st.session_state.user_info = None
 
-except Exception as e:
-    st.error(f"⚠️ 연결 실패! 다음을 확인해주세요:\n1. 구글 시트 제목이 '2026_지방회_시스템'이 맞나요?\n2. 시트에 로봇 이메일(client_email)을 '편집자'로 초대했나요?\n\n에러 메시지: {e}")
+# ------------------------------------------------------------------
+# 3. 화면 구성 (메인 로직)
+# ------------------------------------------------------------------
+
+# (A) 로그인이 안 된 상태 -> 로그인 화면 표시
+if not st.session_state.logged_in:
+    st.header("🔒 유럽직할지방회 임원 로그인")
+    
+    with st.form("login_form"):
+        input_id = st.text_input("아이디")
+        input_pw = st.text_input("비밀번호", type="password")
+        submit = st.form_submit_button("로그인")
+        
+        if submit:
+            user = check_login(input_id, input_pw)
+            if user:
+                st.session_state.logged_in = True
+                st.session_state.user_info = user
+                st.success(f"{user['name']} 목사님, 환영합니다!")
+                time.sleep(1)
+                st.rerun() # 화면 새로고침
+            else:
+                st.error("아이디 또는 비밀번호가 잘못되었습니다.")
+
+# (B) 로그인 된 상태 -> 업무 화면 표시
+else:
+    user = st.session_state.user_info
+    
+    # 사이드바 (로그아웃 버튼 및 정보)
+    with st.sidebar:
+        st.write(f"접속자: {user['name']} ({user['role']})")
+        if st.button("로그아웃"):
+            st.session_state.logged_in = False
+            st.session_state.user_info = None
+            st.rerun()
+            
+    # 메인 화면
+    st.title("🇪🇺 유럽직할지방회 행정 시스템")
+    
+    # 직책에 따른 메뉴 안내 (테스트용)
+    if user['role'] == 'admin':
+        st.info("관리자(회장) 권한으로 접속하셨습니다. 모든 문서 결재가 가능합니다.")
+    elif user['role'] == 'secretary':
+        st.info("서기 권한입니다. 회의록 및 문서를 업로드할 수 있습니다.")
+    elif user['role'] == 'treasurer':
+        st.info("회계 권한입니다. 수입/지출 내역을 관리할 수 있습니다.")
+        
+    st.write("---")
+    st.write("👈 왼쪽 사이드바에서 메뉴를 선택하게 될 예정입니다.")
