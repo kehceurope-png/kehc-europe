@@ -24,7 +24,7 @@ def check_login(username, password):
     """구글 시트에서 아이디/비번 확인"""
     try:
         client = get_connection()
-        sh = client.open("2026_지방회_시스템")
+        sh = client.open("지방회_시스템")
         worksheet = sh.worksheet("users")
         records = worksheet.get_all_records()
         
