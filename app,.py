@@ -13,7 +13,7 @@ import time
 # ------------------------------------------------------------------
 st.set_page_config(page_title="유럽직할지방회", layout="wide", initial_sidebar_state="collapsed")
 
-# 모바일 친화적 CSS (여백 줄이기)
+# 모바일 친화적 스타일 (여백 최소화)
 st.markdown("""
     <style>
         .block-container {padding-top: 1rem; padding-bottom: 0rem;}
@@ -35,7 +35,7 @@ def get_google_sheet():
     client = gspread.authorize(creds)
     return client
 
-# 저장 및 업로드 함수들
+# 데이터 저장 함수
 def save_data(sheet_name, df):
     try:
         client = get_google_sheet()
@@ -50,6 +50,7 @@ def save_data(sheet_name, df):
         st.error(f"저장 오류: {e}")
         return False
 
+# 파일 업로드 함수
 def upload_file_via_script(file_obj, filename, folder_id, script_url):
     try:
         file_content = file_obj.read()
@@ -115,8 +116,22 @@ else:
         if st.button("로그아웃"):
             st.session_state.logged_in = False
             st.rerun()
+        
+        # [NEW] 앱 설치 가이드 추가
+        st.divider()
+        with st.expander("📲 앱으로 설치하기"):
+            st.info("이 페이지를 앱처럼 사용하세요!")
+            st.markdown("""
+            **🍎 아이폰 (Safari)**
+            1. 하단 **[공유]** 버튼 클릭
+            2. **'홈 화면에 추가'** 선택
+            
+            **🤖 갤럭시 (Chrome)**
+            1. 우측 상단 **[점 3개]** 클릭
+            2. **'앱 설치'** 또는 **'홈 화면에 추가'**
+            """)
 
-    # [1] 대시보드 (원스톱 결재 기능 추가)
+    # [1] 대시보드
     if menu == "대시보드":
         st.subheader("Dashboard")
         try:
@@ -124,19 +139,17 @@ else:
             df_doc = pd.DataFrame(sh.worksheet("documents").get_all_records())
             df_fin = pd.DataFrame(sh.worksheet("finance").get_all_records())
 
-            # 통계 계산
             p_doc = len(df_doc[df_doc['status'] == '대기']) if not df_doc.empty else 0
             
             balance = 0
+            p_fin = 0
             if not df_fin.empty:
                 df_fin['amount'] = pd.to_numeric(df_fin['amount'].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
                 income = df_fin[df_fin['type'] == '수입']['amount'].sum()
                 expense = df_fin[df_fin['type'] == '지출']['amount'].sum()
                 balance = income - expense
                 p_fin = len(df_fin[df_fin['status'] == '대기'])
-            else: p_fin = 0
 
-            # 상단 현황판
             c1, c2, c3 = st.columns(3)
             c1.metric("결재 대기", f"{p_doc + p_fin}건", delta="확인 필요" if (p_doc+p_fin)>0 else "완료", delta_color="inverse")
             c2.metric("재정 잔액", f"€ {int(balance):,}")
@@ -144,14 +157,11 @@ else:
             
             st.divider()
 
-            # --- [핵심] 회장님 전용 빠른 결재 섹션 ---
             if user['role'] == 'admin':
                 st.write("### ⚡ 빠른 결재 (One-Touch)")
-                
                 if (p_doc + p_fin) == 0:
                     st.info("🎉 현재 대기 중인 결재 건이 없습니다.")
                 else:
-                    # 1. 재정 결재
                     if p_fin > 0:
                         st.markdown("#### 💰 재정 결재")
                         pending_fin = df_fin[df_fin['status'] == '대기']
@@ -160,14 +170,9 @@ else:
                                 col_a, col_b = st.columns([3, 1])
                                 col_a.markdown(f"**{row['category']}** (€ {row['amount']:,})  \n📄 {row['description']}")
                                 if row['receipt_url']: col_a.link_button("영수증 보기", row['receipt_url'])
-                                
                                 if col_b.button("승인", key=f"dash_fin_{idx}", type="primary"):
-                                    approve_finance(idx)
-                                    st.toast("재정 승인 완료!")
-                                    time.sleep(1)
-                                    st.rerun()
+                                    approve_finance(idx); st.toast("승인 완료!"); time.sleep(1); st.rerun()
 
-                    # 2. 문서 결재
                     if p_doc > 0:
                         st.markdown("#### 📄 문서 결재")
                         pending_doc = df_doc[df_doc['status'] == '대기']
@@ -176,22 +181,14 @@ else:
                                 col_a, col_b = st.columns([3, 1])
                                 col_a.markdown(f"**{row['title']}** (작성: {row['writer']})  \n🗓️ {row['date']}")
                                 if row['file_url']: col_a.link_button("문서 보기", row['file_url'])
-                                
                                 if col_b.button("승인", key=f"dash_doc_{idx}", type="primary"):
-                                    approve_document(idx)
-                                    st.toast("문서 승인 완료!")
-                                    time.sleep(1)
-                                    st.rerun()
-            
-            # 일반 임원에게는 일정 보여주기
+                                    approve_document(idx); st.toast("승인 완료!"); time.sleep(1); st.rerun()
             else:
-                 st.write("##### 📅 다가오는 일정")
-                 # (일정 로직 생략 - 필요시 복구 가능)
                  st.info("왼쪽 메뉴를 선택해 업무를 시작하세요.")
 
         except Exception as e: st.error(f"로딩 오류: {e}")
 
-    # [2] 일정 (모바일 최적화)
+    # [2] 일정
     elif menu == "일정":
         st.subheader("Calendar")
         try:
