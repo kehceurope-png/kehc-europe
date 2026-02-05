@@ -9,9 +9,13 @@ import time
 # ------------------------------------------------------------------
 st.set_page_config(page_title="유럽직할지방회 임원 시스템", layout="wide")
 
+# 기존의 get_connection 함수 전체를 지우고 아래 걸로 교체하세요
+
 @st.cache_resource
 def get_connection():
-   key_dict = json.loads(st.secrets["service_account_json"], strict=False)
+    # 이제 json.loads가 필요 없습니다! 바로 가져옵니다.
+    key_dict = st.secrets["gcp_service_account"]
+    
     scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     creds = Credentials.from_service_account_info(key_dict, scopes=scopes)
     client = gspread.authorize(creds)
