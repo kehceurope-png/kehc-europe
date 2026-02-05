@@ -15,7 +15,7 @@ st.set_page_config(page_title="유럽직할지방회 행정 시스템", layout="
 
 @st.cache_resource
 def get_google_sheet():
-    # Secrets 처리 (Plan A/B 모두 대응)
+    # Secrets 처리
     if "gcp_service_account" in st.secrets:
         key_dict = dict(st.secrets["gcp_service_account"])
         if "\\n" in key_dict["private_key"]:
@@ -23,16 +23,18 @@ def get_google_sheet():
     else:
         key_dict = json.loads(st.secrets["service_account_json"], strict=False)
 
-    scopes = ["https://www.googleapis.com/auth/spreadsheets"]
-    creds = Credentials.from_service_account_info(key_dict, scopes=scopes)
+    # [수정된 부분] 여기에 'drive' 권한을 다시 넣었습니다!
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
     
-    # 시트만 연결합니다 (드라이브 직접 연결 삭제)
+    creds = Credentials.from_service_account_info(key_dict, scopes=scopes)
     client = gspread.authorize(creds)
     return client
 
-# [핵심] Apps Script를 통한 파일 업로드 함수 (우회로)
+# Apps Script를 통한 파일 업로드 함수
 def upload_file_via_script(file_obj, filename, folder_id, script_url):
-    # 파일을 텍스트(Base64)로 변환
     file_content = file_obj.read()
     file_b64 = base64.b64encode(file_content).decode('utf-8')
     
@@ -43,7 +45,6 @@ def upload_file_via_script(file_obj, filename, folder_id, script_url):
         'fileBase64': file_b64
     }
     
-    # 스크립트로 전송
     response = requests.post(script_url, json=payload)
     
     if response.status_code == 200:
@@ -51,7 +52,7 @@ def upload_file_via_script(file_obj, filename, folder_id, script_url):
         if result.get('status') == 'success':
             return result.get('fileUrl')
         else:
-            raise Exception(f"스크립트 내부 오류: {result.get('message')}")
+            raise Exception(f"스크립트 오류: {result.get('message')}")
     else:
         raise Exception(f"통신 오류: {response.text}")
 
@@ -159,21 +160,15 @@ else:
                         if d_title and d_file:
                             with st.spinner("업로드 중..."):
                                 try:
-                                    # 비밀번호함에서 주소 가져오기
                                     fid = st.secrets["drive_folder_id"]
                                     s_url = st.secrets["upload_script_url"]
-                                    
-                                    # [중요] 여기서 새로운 방식을 사용합니다
                                     url = upload_file_via_script(d_file, d_title, fid, s_url)
-                                    
                                     log_document(d_date, d_title, user['name'], url, "대기")
                                     st.success("완료!")
                                     time.sleep(1)
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"업로드 오류: {e}")
-                        else:
-                            st.warning("파일과 제목을 입력하세요.")
         except Exception as e:
             st.error(f"오류: {e}")
 
@@ -228,7 +223,6 @@ else:
                             if f_file:
                                 fid = st.secrets["drive_folder_id"]
                                 s_url = st.secrets["upload_script_url"]
-                                # [중요] 여기서도 새로운 방식을 사용합니다
                                 url = upload_file_via_script(f_file, f"영수증_{f_cat}", fid, s_url)
                             
                             log_finance(f_date, f_type, f_cat, f_amt, f_desc, url, "대기")
